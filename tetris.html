@@ -1,0 +1,1459 @@
+<html>
+<head>
+<title>Tetris</title>
+</head>
+<body>
+<div id='everything'></div>
+<script>
+// INITIALIZE
+var levelChangeFlag;
+document.body.style='background-color:Grey';
+document.getElementById('everything').style='';
+document.getElementById('everything').align='center';
+document.getElementById('everything').innerHTML = `
+	<div id="query0">
+	Select gameplay mode:
+	<input type="button" onclick="configureSinglePlayerGame()" value="1 Player"></input>
+	<input type="button" onclick="configureTwoPlayerGame()" value="2 Players"></input>
+	<br><br>
+	<div id="query1"></div>
+	</div>
+
+	<canvas id="frame" width=0 height=0></canvas>
+
+	<div id="messages" hidden>
+	<p id="msg">blank_msg</p>
+	<p id="msgA">blank_msg</p>
+	<p id="msgB">blank_msg</p>
+	</div>
+`;
+
+// DEBUG
+function printf(elementId, message, clear) {
+	if (clear) {
+		document.getElementById(elementId).innerHTML = message;
+	} else {
+		document.getElementById(elementId).innerHTML += "<br>" + message;
+	}
+}
+
+function magPutImageData(img, x, y, zoom=undefined) {
+	if (zoom == undefined) {
+		zoom = Math.floor(Math.min(canvas.width / img.width, canvas.height / img.height));
+	}
+ 
+	img1 = new ImageData(zoom * img.width, zoom * img.height);
+
+	index0 = 0;
+	for (var i0 = 0; i0 < img.height; i0++) {
+		index1 = index0;
+		for (var j0 = 0; j0 < img.width; j0++) {
+			index2 = index1;
+			r = img.data[4 * (img.width * i0 + j0)];
+			g = img.data[4 * (img.width * i0 + j0) + l ];
+			b = img.data[ 4 * (img.width * i0 + j0) + 2];
+			alpha = img.data[ 4 * (img.width * i0 + j0) + 3];
+			for (var i1 = 0; i1 < zoom; i1++) {
+				index3 = index2;
+				for (var j1 = 0; j1 < zoom; j1 ++) {
+					img1.data[index3] = r;
+					img1.data[index3 + 1] = g;
+					img1.data[index3 + 2] = b;
+					img1.data[index3 + 3] = alpha;
+					index3 += 4;
+				}
+				index2 += 4 * zoom * img.width;
+			}
+			index1 += 4 * zoom;
+		}
+		index0 += 4 * (zoom**2) * img.width;
+	}
+
+	 ctx.putImageData(imgl, x, y);
+}
+
+// CONSTANTS
+// sizes in pixels. time in mi1iseconds
+var maxlevel = 20;
+const nextlevel = [324, 10, 10, 15, 20, 25, 30, 35, 40, 45, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, NaN];
+var fallDelays = [324, 1000, 793, 617.8, 472.73, 355.20, 262, 189.68, 134.73, 93.88, 64.15, 42.98, 28.22, 18.15, 11.44, 7.06, 4.26, 2.52, 1.46,.82,.46];
+var lockDelay = 500;
+var lockDelayHard = 3000;
+var infinity = false;
+var clearDelay = 500;
+var autoShiftDelay = 125;
+var autoShiftInterval = 50; // currently not in use.
+var blockSize = (window.innerHeight / 48) << 1;
+var blockImageData = [];
+var palette = [undefined,
+	[0, 210, 255], // i: cyan
+	[0, 35, 255], // j: blue
+	[255, 140, 0], // l: orange
+	[240, 225, 0], // o: yellow
+	[15, 150, 15], // s: green
+	[175, 0, 175], // t: purple
+	[240, 0, 15], // z: red
+	[150, 150, 150], // Garbage: grey
+	[35, 35, 35], // Game Over: dark grey
+]
+var altPalette = [undefined, '#00d2ff', '#0023ff', '#ff8c00', '#f0e100', '#0f960f', '#8f008f', '#f0000f'];
+const singlePlayerInputKeys = [
+	[65, 37], // left
+	[68, 39], // right
+	[83, 40], // soft
+	[87, 32], // hard
+	[188, 90], // ccw
+	[190, 38], // cw
+	[191, 67], // hold
+];
+const p1InputKeys_standard = [
+	[188], // left
+	[191], // right
+	[190], // soft
+	[32], // hard
+	[90], // ccw
+	[76, 186], // cw
+	[67], // hold
+];
+const p1InputKeys_wooh = [
+	[65], // left
+	[68], // right
+	[83], // soft
+	[87], // hard
+	[188], // ccw
+	[190], // cw
+	[191], // hold
+];
+const p2InputKeys_standard = [
+	[97], // left
+	[99], // right
+	[98], // soft
+	[40, 96], // hard
+	[37], // ccw
+	[101], // cw
+	[39], // hold
+];
+const p2InputKeys_wooh = [
+	[37], // left
+	[39], // right
+	[40], // soft
+	[38], // hard
+	[97], // ccw
+	[98], // cw
+	[99], // hold
+];
+const wallKicks = [ // [0]: jLSTZ, [1]: I, [*][0]: cw, [*][1]: ccw
+[
+	[
+		[[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+		[[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+		[[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+		[[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+	], [
+		[[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+		[[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+		[[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+		[[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+	]
+], [
+	[
+		[[0, 0], [-2, 0], [ 1, 0], [-2, -1], [1, 2]],
+		[[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
+		[[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+		[[0, 0], [1, 0], [-2, 0], [ 1, -2], [-2, 1]],
+	], [
+		[[0, 0], [-1, 0], [2, 0], [-1, 2], [2, - 1]],
+		[[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+		[[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+		[[0, 0], [-2, 0], [1, 0], [-2, -1], [ 1, 2]],
+	]
+]];
+const minos = [NaN,
+	[ // I
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[1, 1, 1, 1],
+			[0, 0, 0, 0],
+		],[
+			[0, 0, 1, 0],
+			[0, 0, 1, 0],
+			[0, 0, 1, 0],
+			[0, 0, 1, 0],
+		],[
+			[0, 0, 0, 0],
+			[1, 1, 1, 1],
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+		],[
+			[0, 1, 0, 0],
+			[0, 1, 0, 0],
+			[0, 1, 0, 0],
+			[0, 1, 0, 0],
+		],
+	],[ // j
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[2, 2, 2, 0],
+			[2, 0, 0, 0],
+		],[
+		[0, 0, 0, 0],
+		[0, 2, 0, 0],
+		[0, 2, 0, 0],
+		[0, 2, 2, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 0, 2, 0],
+			[2, 2, 2, 0],
+			[0, 0, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[2, 2, 0, 0],
+			[0, 2, 0, 0],
+			[0, 2, 0, 0],
+		],
+	],[ // L
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[3, 3, 3, 0],
+			[0, 0, 3, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 3, 3, 0],
+			[0, 3, 0, 0],
+			[0, 3, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[3, 0, 0, 0],
+			[3, 3, 3, 0],
+			[0, 0, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 3, 0, 0],
+			[0, 3, 0, 0],
+			[3, 3, 0, 0],
+		],
+	],[ // 0
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[0, 4, 4, 0],
+			[0, 4, 4, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[0, 4, 4, 0],
+			[0, 4, 4, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[0, 4, 4, 0],
+			[0, 4, 4, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[0, 4, 4, 0],
+			[0, 4, 4, 0],
+		],
+	],[ // S
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[5, 5, 0, 0],
+			[0, 5, 5, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 0, 5, 0],
+			[0, 5, 5, 0],
+			[0, 5, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[5, 5, 0, 0],
+			[0, 5, 5, 0],
+			[0, 0, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 5, 0, 0],
+			[5, 5, 0, 0],
+			[5, 0, 0, 0],
+		],
+	],[ // T
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[6, 6, 6, 0],
+			[0, 6, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 6, 0, 0],
+			[0, 6, 6, 0],
+			[0, 6, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 6, 0, 0],
+			[6, 6, 6, 0],
+			[0, 0, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 6, 0, 0],
+			[6, 6, 0, 0],
+			[0, 6, 0, 0],
+		],
+	],[ // Z
+		[
+			[0, 0, 0, 0],
+			[0, 0, 0, 0],
+			[0, 7, 7, 0],
+			[7, 7, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 7, 0, 0],
+			[0, 7, 7, 0],
+			[0, 0, 7, 0],
+		],[
+			[0, 0, 0, 0],
+			[0, 7, 7, 0],
+			[7, 7, 0, 0],
+			[0, 0, 0, 0],
+		],[
+			[0, 0, 0, 0],
+			[7, 0, 0, 0],
+			[7, 7, 0, 0],
+			[0, 7, 0, 0],
+		],
+	],
+];
+
+
+var canvas = document.getElementById("frame");
+canvas.style = 'background:#ffffff;display:block;margin=0 auto;';
+var ctx = canvas.getContext("2d");
+var game;
+var prevTimeStamp = 0; var frameTime;
+const keys = []; var focuslost = false;
+for (var i = 0; i < 256; i += 1) keys[i] = false;
+
+function generateBlockImageData(color, blockSize) {
+	// todo: make this better???
+	[r, g, b] = color;
+	var blockImageData = new ImageData(blockSize, blockSize);
+
+	for (var i = 1; i < blockSize; i += 1) {
+		rl = Math.floor(((blockSize + i) * r + (3 * blockSize - i) * 255) / blockSize / 4);
+		gl = Math.floor(((blockSize + i) * g + (3 * blockSize - i) * 255) / blockSize / 4);
+		bl = Math.floor(((blockSize + i) * b + (3 * blockSize - i) * 255) / blockSize / 4);
+		r2 = Math.floor((r + 255) / 2);
+		g2 = Math.floor((g + 255) / 2);
+		b2 = Math.floor((b + 255) / 2);
+		r3 = Math.floor(r / 2);
+		g3 = Math.floor(g / 2);
+		b3 = Math.floor(b / 2);
+		r4 = Math.floor(((i + blockSize) / 2 * r) / blockSize);
+		g4 = Math.floor(((i + blockSize) / 2 * g) / blockSize);
+		b4 = Math.floor(((i + blockSize) / 2 * b) / blockSize);
+		for (var j = 0; j <= Math.min(blockSize / 6,.5 * blockSize -.5 * i - 1); j += 1) {
+			index1 = 4 * (blockSize * j + (i + j));
+			blockImageData.data[index1] = rl;
+			blockImageData.data[index1 + 1] = gl;
+			blockImageData.data[index1 + 2] = bl;
+			blockImageData.data[index1 + 3] = 255;
+			index2 = 4 * (blockSize * (i + j) + j);
+			blockImageData.data[index2] = r2;
+			blockImageData.data[index2 + 1] = g2;
+			blockImageData.data[index2 + 2] = b2;
+			blockImageData.data[index2 + 3] = 255;
+			index3 = 4 * blockSize**2 - index2 - 4;
+			blockImageData.data[index3] = r3;
+			blockImageData.data[index3 + 1] = g3;
+			blockImageData.data[index3 + 2] = b3;
+			blockImageData.data[index3 + 3] = 255;
+			index4 = 4 * blockSize**2 - index1 - 4;
+			blockImageData.data[index4] = r4;
+			blockImageData.data[index4 + 1] = g4;
+			blockImageData.data[index4 + 2] = b4;
+			blockImageData.data[index4 + 3] = 255;
+		}
+	}
+
+	for (var i = 0; i <= Math.min(blockSize / 6, .5 * blockSize - .5 * i - 1); i += 1) {
+		index1 = 4 * ((blockSize + 1) * i);
+		blockImageData.data[index1] = 255;
+		blockImageData.data[index1 + 1] = 255;
+		blockImageData.data[index1 + 2] = 255;
+		blockImageData.data[index1 + 3] = 255;
+		index2 = 4 * ((blockSize - 1) * (i + 1));
+		blockImageData.data[index2] = 255;
+		blockImageData.data[index2 + 1] = 255;
+		blockImageData.data[index2 + 2] = 255;
+		blockImageData.data[index2 + 3] = 255;
+		index3 = 4 * blockSize**2 - index2 - 4;
+		blockImageData.data[index3] = 255;
+		blockImageData.data[index3 + 1] = 255;
+		blockImageData.data[index3 + 2] = 255;
+		blockImageData.data[index3 + 3] = 255;
+		index4 = 4 * blockSize**2 - index1 - 4;
+		blockImageData.data[index4] = 255;
+		blockImageData.data[index4 + 1] = 255;
+		blockImageData.data[index4 + 2] = 255;
+		blockImageData.data[index4 + 3] = 255;
+	}
+
+	for (var i = Math.ceil(blockSize / 6); i < Math.floor(blockSize * 5 / 6); i += 1) {
+		index = 4 * (i * (blockSize) + Math.ceil(blockSize / 6));
+		for (var j = Math.ceil(blockSize / 6); j < Math.floor(blockSize * 5 / 6); j += 1) {
+			blockImageData.data[index] = r;
+			blockImageData.data[index + 1] = g;
+			blockImageData.data[index + 2] = b;
+			blockImageData.data[index + 3] = 255;
+			index += 4;
+		}
+	}
+
+	return blockImageData;
+}
+
+for (var i = 1; i < palette.length; i++) {
+	blockImageData[i] = generateBlockImageData(palette[i], blockSize);
+}
+
+class TetrisGame {
+	constructor (startLevel= 1, inputKeys, opponent=undefined, handicap=1) {
+		this.level = startLevel; this.score = 0; this.gameOver = 0;
+		this.nextlevel = nextlevel[this.level]; this.noOfClearedRows = 0;
+		// I did not copy its values. hopefully that's okay.
+		this.inputKeys = inputKeys;
+		this.opponent = opponent;
+		this.handicap = handicap; this.garbageRemainder = 0;
+
+		this.board = [];
+		for (var i = 0; i < 40; i++) {
+			this.board[i] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+		}
+
+		this.newlylocked = [0, [0, 0], [0, 0], [0, 0], [0, 0], 0];
+
+		this.bag = [1, 2, 3, 4, 5, 6, 7, 1, 2, 3, 4, 5, 6, 7];
+		for (var i = 0; i < 7; i++) {
+			var j = i + Math.floor(Math.random() * (7 - i));
+			[this.bag[i], this.bag[j]] = [this.bag[j], this.bag[i]];
+		}
+		this.fallingMino = [this.bag[0], 3, 18, 0];
+		this.fellDownTo = 18; this.lockDelayHard = lockDelayHard;
+		this.nextIndex = 1; this.nextMinoViewOffset = 0;
+		this.heldMino = 0; this.held = false;
+
+		this.fallDelay = fallDelays[this.level];
+		this.lockDelay = 0; this.locked = 0;
+		this.clearDelay = 0; this.clearedRows = [];
+		for (var i = 0; i < 40; i++) {
+			this.clearedRows[i] = false;
+		}
+
+		this.lastMove = 0;
+		this.b2b = false;
+		this.combo = 0;
+		this.earnedScore = 0; this.earnedGarbage = 0;
+		this.garbage = 0; this.lastGarbageHole = Math.floor(10 * Math.random());
+
+		// [left, right, soft, hard, ccw, cw, hold]
+		// for key hold delay and stutts
+		this.prevInputs = [0, 0, 0, 0, 0, 0, 0];
+		this.autoShift = false; this.softlockDelay = 0;
+	}
+
+	draw(x0, y0) {
+		var x; var y; var x1; var y1;
+		// temporary variable to store the mino/block being drawn
+		var mino; var minoId; var block;
+
+		// todo: frames and stuffs should be ImageData
+		// main window
+		ctx.fillStyle = "#f0f0f0";
+		ctx.fillRect(x0 + 5 * blockSize, y0 + blockSize, 10 * blockSize, 20 * blockSize);
+		ctx.fillStyle = "Black";
+		ctx.fillRect(x0 + 5 * blockSize - 2, y0 + blockSize - 2, 10 * blockSize + 4, 20 * blockSize + 4);
+		// next blocks window
+		ctx.fillStyle = "#000000";
+		ctx.fillRect(x0 + 15 * blockSize, y0 + blockSize - 2, 2.5 * blockSize + 4, blockSize + 4);
+		ctx.fillStyle = "#000080";
+		ctx.fillRect(x0 + 15 * blockSize + 2, y0 + blockSize, 2.5 * blockSize, blockSize);
+		ctx.font = Math.floor(0.75 * blockSize) + "px Arial";
+		ctx.fillStyle = "#ffffff";
+		ctx.fillText("Next", x0 + 15.5 * blockSize, y0 + 1.75 * blockSize);
+
+		ctx.fillStyle = "Black";
+		ctx.fillRect(x0 + 5 * blockSize - 2, y0 + blockSize - 2, 10 * blockSize + 4, 20 * blockSize + 4);
+		ctx.fillStyle = "#f0f0f0";
+		ctx.fillRect(x0 + 5 * blockSize, y0 + blockSize, 10 * blockSize, 20 * blockSize);
+
+		// draw the board
+		// todo: partially show the 20th row
+		// todo: do something about this miserable falling animation
+		x1 = x0 + 5 * blockSize; y = y0 + 21 * blockSize;
+		for (var i = 0; i < 20; i++) {
+			x = x1; y -= blockSize;
+			if (this.clearedRows[i] && this.clearDelay / clearDelay < 0.25) {
+				y += (1 - (this.clearDelay / clearDelay * 4))**3 * blockSize;
+				continue;
+			}
+			if (this.gameOver / 50 > i) {
+				for (var j = 0; j < 10; j++) {
+					block = this.board[i][j];
+					if (block) ctx.putImageData(blockImageData[9], x, y);
+					x += blockSize;
+				}
+			} else if (this.clearedRows[i]) {
+				for (var j = 0; j < 10; j++) {
+					block = this.board[i][j];
+					if (block && Math.abs(4.5 - j) > (1 - this.clearDelay / clearDelay) /.15) ctx.putImageData(blockImageData[block], x, y);
+					x += blockSize;
+				}
+			} else {
+				for (var j = 0; j < 10; j++) {
+					block = this.board[i][j];
+					if (block) ctx.putImageData(blockImageData[block], x, y);
+					x += blockSize;
+				}
+			}
+		}
+
+		if (!this.clearDelay) {
+			// draw the mino shadow
+			// todo: prettier
+			minoId = this.fallingMino[0];
+			mino = minos[minoId][this.fallingMino[3]];
+			x1 = x0 + (5 + this.fallingMino[1]) * blockSize; y = y0 + (21 - this.fallingMino[2]) * blockSize;
+			for (var i = -1; !this.collide(0, i, 0); i--) y += blockSize;
+			ctx.globalAlpha = .25;
+			for (var i = 0; i < 4; i++) {
+				x = x1,
+				y -= blockSize;
+				for (var j = 0; j < 4; j++) {
+					block = mino[i][j];
+					ctx.fillStyle = "#000000";
+					if (block) ctx.fillRect(x, y, blockSize, blockSize);
+					x += blockSize;
+				}
+			}
+			ctx.globalAlpha = 1;
+
+			// draw the falling mino
+			mino = minos[this.fallingMino[0]][this.fallingMino[3]];
+			block = (this.gameOver > 1000) ? 9 : minos[this.fallingMino[0]][0][2][1];
+			x1 = x0 + (5 + this.fallingMino[1]) * blockSize; y = y0 + (21 - this.fallingMino[2]) * blockSize;
+			for (var i = 0; i < 4; i++) {
+				x = x1;
+				y -= blockSize;
+				for (var j = 0; j < 4; j++) {
+					if (mino[i][j]) ctx.putImageData(blockImageData[block], x, y);
+					x += blockSize;
+				}
+			}
+		}
+		// draw the next 5 minoes
+		this.nextMinoViewOffset = Math.max(this.nextMinoViewOffset *.75 - 1, 0);
+		x = x0 + 15.5 * blockSize; y1 = y0 + 6.5 * blockSize + this.nextMinoViewOffset;
+
+		for (var h = 0; h < 5; h++) {
+			minoId = this.bag[(this.nextIndex + h) % 14];
+			mino = minos[minoId][0];
+			block = (this.gameOver / 50 > 17 - 3 * h) ? 9 : mino[2][1];
+
+			x1 = x0 + 16 * blockSize; y = y1;
+			if (minoId == 1) {
+				x1 -=.5 * blockSize; y -=.5 * blockSize;
+			} else if (minoId == 4) {
+				x1 -=.5 * blockSize;
+			}
+			for (var i = 0; i < 4; i++) {
+				x = x1;
+				y -= blockSize;
+				for (var j = 0; j < 4; j++) {
+					if (mino[i][j]) ctx.putImageData(blockImageData[block], x, y);
+					x += blockSize;
+				}
+			}
+			y1 += 3 * blockSize;
+		}
+
+		// draw the held mino
+		if (this.heldMino) {
+			minoId = this.heldMino
+			mino = minos[minoId][0];
+			block = (this.gameOver / 50 > 17) ? 9 : mino[2][1];
+			x1 = x0 + 1 * blockSize; y = y0 + 6.5 * blockSize;
+			if (minoId == 1) {
+				x1 -=.5 * blockSize; y -=.5 * blockSize;
+			} else if (minoId == 4) {
+				x1 -=.5 * blockSize;
+			}
+			for (var i = 0; i < 4; i++) {
+				x = x1;
+				y -= blockSize;
+				for (var j = 0; j < 4; j++) {
+					if (mino[i][j]) ctx.putImageData(blockImageData[block], x, y);
+					x += blockSize;
+				}
+			}
+		} else {}
+
+		// preview garbage blocks
+		var x1 = Math.floor(this.earnedGarbage);
+		if (x1) {
+			ctx.globalAlpha = 0.125;
+			ctx.fillStyle = 'Black';
+			ctx.fillRect(x0 + 5 * blockSize, y0 + (21 - x1) * blockSize, 10 * blockSize, x1 * blockSize);
+			ctx.globalAlpha = 1;
+		}
+
+		// draw the effects
+		// glow after a mino is locked
+		if (this.newlylocked[0] > 0) {
+			ctx.globalAlpha = this.newlylocked[0] / 5000;
+			ctx.fillStyle = altPalette[this.newlylocked[5]];
+			for (var i = 1; i <= 4; i++) {
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19 - this.newlylocked[i][0]) * blockSize, blockSize, 2 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.2 - this.newlylocked[i][0]) * blockSize, blockSize, 1.8 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.36 - this.newlylocked[i][0]) * blockSize, blockSize, 1.64 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.49 - this.newlylocked[i][0]) * blockSize, blockSize, 1.51 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.59 - this.newlylocked[i][0]) * blockSize, blockSize, 1.41 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.67 - this.newlylocked[i][0]) * blockSize, blockSize, 1.33 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.74 - this.newlylocked[i][0]) * blockSize, blockSize, 1.26 * blockSize);
+				ctx.fillRect(x0 + (5 + this.newlylocked[i][1]) * blockSize, y0 + (19.79 - this.newlylocked[i][0]) * blockSize, blockSize, 1.21 * blockSize);
+			}
+			ctx.globalAlpha = 1;
+			this.newlylocked[0] -= 15.625;
+		}
+
+		// flashing effect on difficult line clears
+		if (this.clearDelay && this.b2b) {
+			ctx.globalAlpha =.5;
+			ctx.fillStyle = (Math.floor(this.clearDelay / 75) % 2) ? "#ffffff" : "#000000";
+			ctx.fillRect(x0 + 5 * blockSize, y0 + blockSize, 10 * blockSize, 20 * blockSize);
+			ctx.globalAlpha = 1;
+		}
+
+		// score and level
+		ctx.fillStyle = 'Black';
+		ctx.fillText('Level ' + this.level, x0 + blockSize, y0 + 16 * blockSize);
+		ctx.fillText(this.nextlevel + ' to go', x0 + blockSize, y0 + 17 * blockSize);
+		ctx.fillText('Score', x0 + blockSize, y0 + 19 * blockSize);
+		ctx.fillText(Math.floor(this.score / 10000000) % 10, x0 + 1.1 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(Math.floor(this.score / 1000000) % 10, x0 + 1.55 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(Math.floor(this.score / 100000) % 10, x0 + 2 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(Math.floor(this.score / 10000) % 10, x0 + 2.45 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(Math.floor(this.score / 1000) % 10, x0 + 2.9 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(Math.floor(this.score / 100) % 10, x0 + 3.35 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(Math.floor(this.score / 10) % 10, x0 + 3.8 * blockSize, y0 + 20 * blockSize);
+		ctx.fillText(this.score % 10, x0 + 4.25 * blockSize, y0 + 20 * blockSize);
+
+		// game over message
+		if (this.gameOver) {
+			var scale = Math.min(this.gameOver / 1000, 1);
+			ctx.globalAlpha = scale**3;
+			ctx.strokeStyle = "#000000";
+			ctx.lineWidth = blockSize / 8 / scale;
+			ctx.fillStyle = "#ffffff";
+			ctx.font = Math.floor(2.5 / scale * blockSize) + "px Arial";
+			ctx.strokeText('Game Over', x0 + (10 - 6.25 / scale) * blockSize, y0 + (11 + 1 / scale) * blockSize);
+			ctx.fillText('Game Over', x0 + (10 - 6.25 / scale) * blockSize, y0 + (11 + 1 / scale) * blockSize);
+			ctx.globalAlpha = 1;
+		}
+	}
+
+	collide(dx, dy, dw) {
+		var fallingMino = minos[this.fallingMino[0]][(this.fallingMino[3] + dw + 4) % 4];
+		var i1 = this.fallingMino[2] + dy; var j1;
+		for (var i = 0; i < 4; i++) {
+			j1 = this.fallingMino[1] + dx;
+			for (var j = 0; j < 4; j++) {
+				if (fallingMino[i][j]) {
+					if (i1 < 0 || j1 < 0 || j1 >= 10) {
+						return true;
+					} else if (this.board[i1][j1]) {
+						return true;
+					} else {};
+				}
+				j1 ++;
+			}
+			i1 ++;
+		}
+		return false;
+	}
+
+	sendGarbage(n) {
+		this.garbageRemainder += this.handicap * n;
+		var attack = Math.floor(this.garbageRemainder);
+		this.garbageRemainder -= attack;
+
+		try {
+			[this.earnedGarbage, attack] = [Math.max(this.earnedGarbage - attack, 0), Math.max(attack - this.earnedGarbage, 0)];
+			this.opponent.receiveGarbage(attack);
+			console.log(this.handicap + ', gr: ' + this.garbageRemainder + ', n: ' + n + ', atk: ' + attack);
+		} catch {}
+	}
+
+	pileGarbage() {
+		for (var i = 39; i >= this.earnedGarbage; i--) {
+			this.board[i] = this.board[i - this.earnedGarbage];
+		}
+		for (var i = this.earnedGarbage - 1; i >= 0; i--) {
+			this.board[i] = [8, 8, 8, 8, 8, 8, 8, 8, 8, 8];
+			if (Math.floor(Math.random() * 30 / Math.max(10, 24 - this.garbage))) {
+				this.lastGarbageHole = Math.floor(10 * Math.random());
+			} else {}
+			this.board[i][this.lastGarbageHole] = 0;
+		}
+
+		this.garbage += this.earnedGarbage; this.earnedGarbage = 0;
+	}
+
+	nextFallingMino() {
+		this.fallingMino = [this.bag[this.nextIndex], 3, 18, 0];
+		this.fellDownTo = 18; this.lockDelayHard = lockDelayHard;
+		this.nextIndex = (this.nextIndex + 1) % 14;
+		var shuffleIndex0 = (this.nextIndex + 5) % 14;
+		var shuffleIndex1 = shuffleIndex0 + Math.floor(((13 - shuffleIndex0) % 7 + 1) * Math.random());
+		[this.bag[shuffleIndex0], this.bag[shuffleIndex1]] = [this.bag[shuffleIndex1], this.bag[shuffleIndex0]]; 
+		this.fallDelay = fallDelays[this.level]; this.lockDelay = 0;
+		this.nextMinoViewOffset += 3 * blockSize;
+
+		if (this.collide(0, 0, 0)) this.gameOver = 1;
+	}
+
+	clear() {
+		var i0 = 0;
+		for (var i1 = 0; i0 < 40; i1++) {
+			while (this.clearedRows[i0]) {
+				this.clearedRows[i0] = false;
+				i0++;
+			}
+			for (var j = 0; j < 10; j++) {
+				this.board[i1][j] = this.board[i0][j];
+			}
+			i0++;
+		}
+		this.score += this.earnedScore; this.earnedScore = 0;
+		this.nextlevel -= this.noOfClearedRows; this.noOfClearedRows = 0;
+		if (this.nextlevel <= 0) {
+			this.nextlevel += nextlevel[++this.level];
+		}
+		this.clearDelay = 0;
+		this.pileGarbage();
+		this.nextFallingMino();
+	}
+
+
+
+	lock() {
+		var fallingMino = minos[this.fallingMino[0]][this.fallingMino[3]];
+		var i1 = this.fallingMino[2]; var j1;
+		var noOfClearedRows = 0; var allClear = true; var tSpin = 0;
+		var score = 0; var garbage = 0; var b2b = false;
+
+		if (this.fallingMino[0] == 6) {
+			for (i = this.fallingMino[2] + 1; i < this.fallingMino[2] + 4; i += 2) {
+				if (i < 0) {
+					tSpin += 2;
+				} else{
+					for (j = this.fallingMino[1]; j < this.fallingMino[1] + 4; j += 2) {
+						if (j < 0 || j >= 10) {
+							tSpin++;
+						} else if (this.board[i][j]) {
+							tSpin++;
+						} else {}
+					}
+				}
+			}
+
+			if (tSpin >= 3) tSpin = this.lastMove;
+			else tSpin = 0;
+		}
+
+		var newlylockedIndex = 1; this.newlylocked[0] = 500; this.newlylocked[5] = this.fallingMino[0];
+		for (var i = 0; i < 4; i++) {
+			j1 = this.fallingMino[1];
+			for (var j = 0; j < 4; j++) {
+				if (fallingMino[i][j]) {
+					this.board[i1][j1] = fallingMino[i][j],
+					this.newlylocked[newlylockedIndex++] = [i1, j1];
+				}
+				j1++;
+			}
+			if (i1 >= 0) {
+				this.clearedRows[i1] = true;
+				for (var j1 = 0; j1 < 10; j1++) {
+					if (!this.board[i1][j1]) {
+						this.clearedRows[i1] = false;
+						break;
+					}
+				}
+				if (this.clearedRows[i1]) noOfClearedRows++;
+			} else {}
+			i1 ++;
+		}
+
+		for (var j = 0; j < 10; j++) {
+			if (this.board[noOfClearedRows][j]) {
+				allClear = false;
+				break;
+			}
+		}
+
+		this.held = false;
+
+		if (allClear) {
+			score = 2000; garbage = 7; b2b = true;
+		} else {
+		switch (noOfClearedRows){
+			case 0:
+				switch (tSpin) {
+					case 0:
+						score = 0; this.b2b = false;
+						break;
+					case 1:
+						score = 400;
+						break;
+					case 2:
+						score = 100;
+						break;
+					default:
+						break;
+				}
+				this.score += score;
+				this.lastMove = 0; this.combo = 0;
+				this.noOfClearedRows = 0;
+				this.clearDelay = 0;
+				this.pileGarbage();
+				this.nextFallingMino();
+				return;
+			case 1:
+				switch (tSpin) {
+					case 0:
+						score = 100;
+						break;
+					case 1:
+						score = 800; garbage = 2; b2b = true;
+						break;
+					case 2:
+						score = 200; garbage = 2; b2b = true;
+						break;
+					default:
+						break;
+				}
+				break;
+			case 2:
+				if (tSpin) {
+					score = 1200; garbage = 4; b2b = true;
+				} else {
+					score = 300; garbage = 1;
+				}
+				break;
+			case 3:
+				if (tSpin) {
+					score = 1600; garbage = 6; b2b = true;
+				} else {
+					score = 500; garbage = 2;
+				}
+				break;
+			case 4:
+				score = 800; garbage = 4; b2b = true;
+				break;
+			default:
+				break;
+			}
+		}
+
+		if (this.b2b) {
+			score *= 1.5; garbage += 1;
+		}
+		score += this.combo * 50; garbage += Math.floor(this.combo / 2); this.combo += 1;
+		this.earnedScore += score * this.level; this.sendGarbage(garbage);
+		this.lastMove = 0; this.b2b = b2b;
+		this.noOfClearedRows = noOfClearedRows;
+		this.clearDelay = clearDelay;
+	}
+
+	control(frameTime) {
+		var inputs = [];
+
+		for (var i = 0; i < 7; i++) {
+			inputs[i] = false;
+			for (var j = 0; j < this.inputKeys[i].length; j++) {
+				if (keys[this.inputKeys[i][j]]) {
+					inputs[i] = true;
+					break;
+				}
+			}
+		}
+
+		var leftShifted = false;
+
+		// autoShiftInterval for left, right and soft drop. no key holding for other inputs
+
+		if (inputs[0] && !this.collide(-1, 0, 0)) {
+			if (this.prevInputs[0] > 0) {
+				this.prevInputs[0] -= frameTime;
+			} else {
+				leftShifted = true;
+				this.fallingMino[1] -= 1; this.lastMove = 0;
+				if (this.autoShift) {
+					this.prevInputs[0] += autoShiftInterval;
+				} else {
+					this.prevInputs[0] += autoShiftDelay;
+					this.autoShift = true;
+				}
+			}
+		} else {
+			this.prevInputs[0] = 0;
+		}
+
+		if (inputs[1] && !(leftShifted ? this.collide(2, 0, 0) : this.collide(1, 0, 0))) {
+			if (this.prevInputs[1] > 0) {
+				this.prevInputs[1] -= frameTime;
+			} else {
+				this.fallingMino[1] += 1; this.lastMove = 0;
+				if (this.autoShift) {
+					this.prevInputs[1] += autoShiftInterval;
+				} else {
+					this.prevInputs[1] += autoShiftDelay;
+					this.autoShift = true;
+				}
+			}
+		} else {
+			this.prevInputs[1] = 0;
+		}
+
+		if (!inputs[0] && !inputs[1]) this.autoShift = false;
+
+		if (inputs[2]) {
+			if (this.prevInputs[2] > 0) {
+				this.prevInputs[2] -= frameTime;
+				if (this.softlockDelay) this.softlockDelay += frameTime;
+			} else {
+				if (this.collide(0, -1, 0)) {
+					this.softlockDelay += frameTime;
+					if (this.softlockDelay > 100) {
+						this.lock();
+					}
+				} else {
+					this.fallingMino[2] -= 1; this.lastMove = 0;
+					if (this.fallingMino[2] < this.fellDownTo) {
+						this.fellDownTo = this.fallingMino;
+						this.lockDelayHard = lockDelayHard;
+					}
+					this.fallDelay = fallDelays[this.level];
+					this.score += 1;
+					this.prevInputs[2] += autoShiftInterval;
+				}
+			}
+		} else {
+			this.prevInputs[2] = 0;
+			this.softlockDelay = 0;
+		}
+
+		if (inputs[3]) {
+			if (this.prevInputs[3]) {}
+			else {
+				while (!this.collide(0, -1, 0)) {
+					this.fallingMino[2] -= 1; this.lastMove = 0;
+					this.score += 2;
+				}
+				this.lock();
+				this.prevInputs[3] = 1;
+			}
+		} else {
+			this.prevInputs[3] = 0;
+		}
+
+		if (inputs[4]) {
+			if (this.prevInputs[4]) {}
+			else {
+				var wallKick = wallKicks[this.fallingMino[0] == 1 ? 1 : 0][1][this.fallingMino[3]];
+				for (var i = 0; i < 5; i++) {
+					if (this.collide(wallKick[i][0], wallKick[i][1], -1)) {}
+					else {
+						this.fallingMino[1] += wallKick[i][0];
+						this.fallingMino[2] += wallKick[i][1];
+						this.fallingMino[3] = (this.fallingMino[3] + 3) % 4;
+						this.lockDelay = 0;
+						if (this.fallingMino[2] < this.fellDownTo) {
+							this.fellDownTo = this.fallingMino;
+							this.lockDelayHard = lockDelayHard;
+						}
+						if (i) {
+							this.fallDelay = fallDelays[this.level];
+							this.lastMove = 2;
+						} else this.lastMove = 1;
+						break; 
+					}
+				}
+				this.prevInputs[4] = 1; 
+			}
+		} else {
+			this.prevInputs[4] = 0;
+		}
+
+		if (inputs[5]) {
+			if (this.prevInputs[5]) {}
+			else {
+				var wallKick = wallKicks[this.fallingMino[0] == 1 ? 1 : 0][0][this.fallingMino[3]];
+				for (var i = 0; i < 5; i++) {
+					if (this.collide(wallKick[i][0], wallKick[i][1], 1)) {}
+					else {
+						this.fallingMino[1] += wallKick[i][0];
+						this.fallingMino[2] += wallKick[i][1];
+						this.fallingMino[3] = (this.fallingMino[3] + 1) % 4;
+						this.lockDelay = 0;
+						if (this.fallingMino[2] < this.fellDownTo) {
+							this.fellDownTo = this.fallingMino;
+							this.lockDelayHard = lockDelayHard;
+						}
+						if (i) {
+							this.fallDelay = fallDelays[this.level];
+							this.lastMove = 2;
+						} else this.lastMove = 1;
+						break;
+					}
+				}
+				this.prevInputs[5] = 1;
+			}
+		} else {
+			this.prevInputs[5] = 0;
+		}
+
+		if (inputs[6]) {
+			if (this.prevInputs[6]) {}
+			else if (this.held) {}
+			else if (this.heldMino) {
+				[this.fallingMino, this.heldMino] = [[this.heldMino, 3, 18, 0], this.fallingMino[0]];
+				this.fallDelay = fallDelays[this.level]; this.lockDelay = 0;
+				this.lockDelayHard = 5000;
+				this.held = true; this.lastMove = 0;
+				this.prevInputs[6] = 1;
+			} else {
+				this.heldMino = this.fallingMino[0];
+				this.nextFallingMino();
+				this.held = true; this.lastMove = 0;
+				this.prevInputs[6] = 1;
+				}
+			} else {
+				this.prevInputs[6] = 0;
+			}
+	}
+
+	frameAdvance(frameTime) {
+		printf('msgA', this.fallDelay + ', ' + this.lockDelay + ', ' + this.lockDelayHard, true);
+		if (this.gameOver) {
+			this.gameOver += frameTime;
+		} else if (this.clearDelay) {
+			if (this.clearDelay <= frameTime) {
+				this.clear();
+			} else {
+				this.clearDelay -= frameTime;
+			}
+		} else {
+			this.control(frameTime);
+
+			if (this.lockDelay) {
+				if (this.collide(0, -1, 0)) {
+					this.lockDelay -= frameTime;
+					this.lockDelayHard -= frameTime;
+					if (this.lockDelay <= 0 || (!infinity && this.lockDelayHard <= 0)) {
+						this.lock();
+					} else {}
+				} else {
+					this.fallDelay = fallDelays[this.level];
+					this.lockDelay = 0;
+				}
+			} else {
+				this.fallDelay -= frameTime;
+				if (this.collide(0, -1, 0)) this.lockDelayHard -= frameTime;
+				while (this.fallDelay < 0) {
+					this.fallDelay += fallDelays[this.level];
+					if (this.collide(0, -1, 0)) {
+						this.lockDelay = lockDelay;
+						break;
+					} else {
+						this.fallingMino[2] -= 1; this.lastMove = 0;
+						if (this.fallingMino[2] < this.fellDownTo) {
+							this.fellDownTo = this.fallingMino;
+							this.lockDelayHard = lockDelayHard;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	receiveGarbage(n) {
+		this.earnedGarbage += n;
+	}
+}
+
+class SinglePlayerGame {
+	constructor(startLevel= 1) {
+		this.p1game = new TetrisGame(startLevel, singlePlayerInputKeys);
+		this.paused = 0;
+		this.gameOver = false;
+		this.prevInputs = [false];  // [pause]
+		this.countDown = 3000;
+	}
+
+	drawCountDown(x, y) {
+		var count = Math.floor(this.countDown / 1000) + 1;
+		if (count) {
+			var scale = count - this.countDown / 1000;
+			ctx.globalAlpha = 1 - scale**2;
+			ctx.strokeStyle = "#000000";
+			ctx.lineWidth = blockSize / 8;
+			ctx.fillStyle = "#ffffff";
+			ctx.font = Math.floor(6 * blockSize) + "px Arial";
+			ctx.strokeText(count, x + 8.5 * blockSize, y + 13 * blockSize);
+			ctx.fillText(count, x + 8.5 * blockSize, y + 13 * blockSize);
+			ctx.globalAlpha = 1;
+		}
+	}
+
+	drawPauseMessage(x, y) {
+		if (Math.floor(this.paused / 500) % 2) {}
+		else {
+			ctx.font = "120px Anal";
+			ctx.fillStyle = "Red"; ctx.globalAlpha =.5;
+			ctx.fillText("PAUSED", x + 3.5 * blockSize, y + 11 * blockSize);
+			ctx.globalAlpha = 1;
+		}
+	}
+
+	control() {
+		if (keys[27]) {
+			if (this.prevInputs[0]) {}
+			else {
+				this.prevInputs[0] = true;
+				this.paused = this.paused ? 0 : 1;
+			}
+		} else {
+			this.prevInputs[0] = false;
+		}
+	}
+
+	draw(x, y) {
+		this.p1game.draw(x, y);
+		if (this.countDown) {
+			this.drawCountDown(x, y);
+		} else if (this.paused) {
+			this.drawPauseMessage(x, y);
+		} else {}
+	}
+
+	frameAdvance(frameTime) {
+		this.control();
+
+		if (this.countDown) {
+			if (frameTime > 100) frameTime = 1;
+			this.countDown = Math.max(0, this.countDown - frameTime);
+			this.paused = 0;
+		} else if ((frameTime > 100 || focuslost) && !this.paused) this.paused = 1;
+
+		if (this.countDown) {}
+		else if (this.paused) {
+			this.paused += frameTime;
+		} else {
+			this.p1game.frameAdvance(frameTime);
+		}
+	}
+
+	pause() {
+		this.paused = 1; 
+	}
+}
+ 
+class TwoPlayerGame {
+	constructor(startlevel= 1, inputKeys=[p1InputKeys_standard, p2InputKeys_standard], handicap = [1, 1]) {
+		var p1InputKeys, p2InputKeys, p1Handicap, p2Handicap;
+		[p1InputKeys, p2InputKeys] = inputKeys; [p1Handicap, p2Handicap] = handicap;
+
+		this.p1game = new TetrisGame(startlevel, p1InputKeys, undefined, p1Handicap);
+		this.p2game = new TetrisGame(startlevel, p2InputKeys, this.p1game, p2Handicap);
+		this.p1game.opponent = this.p2game;
+		this.paused = 0;
+		this.gameOver = false;
+		this.prevInputs = [false]; // [pause]
+		this.countDown = 3000;
+	}
+
+	drawWinMessage(x, y, winner) {
+		ctx.strokeStyle = "#0080ff";
+		ctx.lineWidth = blockSize / 3;
+		ctx.fillStyle = "#ffffff";
+		ctx.font = Math.floor(6 * blockSize) + "px Arial";
+		ctx.strokeText('Player ' + winner, x + 8 * blockSize, y + 8 * blockSize);
+		ctx.fillText('Player ' + winner, x + 8 * blockSize, y + 8 * blockSize);
+		ctx.strokeText('Wins!', x + 10 * blockSize, y + 18 * blockSize);
+		ctx.fillText('Wins!', x + 10 * blockSize, y + 18 * blockSize);
+	}
+
+	drawCountDown(x, y) {
+		var count = Math.floor(this.countDown / 1000) + 1;
+		if (count) {
+			var scale = count - this.countDown / 1000;
+			ctx.globalAlpha = 1 - scale**2;
+			ctx.strokeStyle = "#000000";
+			ctx.lineWidth = blockSize / 8;
+			ctx.fillStyle = "#ffffff";
+			ctx.font = Math.floor(6 * blockSize) + "px Arial";
+			ctx.strokeText(count, x + 8.5 * blockSize, y + 13 * blockSize);
+			ctx.fillText(count, x + 8.5 * blockSize, y + 13 * blockSize);
+			ctx.globalAlpha = 1;
+		}
+	}
+
+	drawPauseMessage(x, y) {
+		if (Math.floor(this.paused / 500) % 2) {}
+		else {
+			ctx.font = "120px Arial";
+			ctx.fillStyle = "Red"; ctx.globalAlpha =.5;
+			ctx.fillText("PAUSED", x + 3.5 * blockSize, y + 11 * blockSize);
+			ctx.globalAlpha = 1;
+		}
+	}
+
+	control() {
+		if (keys[27]) {
+			if (this.prevInputs[0]) {}
+			else {
+				this.prevInputs[0] = true;
+				this.paused = this.paused ? 0 : 1;
+			}
+		} else {
+			this.prevInputs[0] = false;
+		}
+	}
+
+	draw(x, y) {
+		this.p1game.draw(x, y);
+		this.p2game.draw(x + 20 * blockSize, y);
+		if (this.countDown) {
+			this.drawCountDown(x, y);
+			this.drawCountDown(x + 20 * blockSize, y);
+		} else if (this.paused) {
+			this.drawPauseMessage(x, y);
+		} else if (this.p1game.gameOver > 1000) {
+			this.drawWinMessage(x, y, 2);
+		} else if (this.p2game.gameOver > 1000) {
+			this.drawWinMessage(x, y, 1);
+		}
+	}
+
+	frameAdvance(frameTime) {
+		this.control(); 
+
+		printf('msgB', this.p1game.handicap + ',' + this.p1game.garbageRemainder, true);
+
+		if (this.countDown) {
+			if (frameTime > 100) frameTime = 1;
+			this.countDown = Math.max(0, this.countDown - frameTime);
+			this.paused = 0;
+		} else if ((frameTime > 100 || focuslost) && !this.paused) {
+			focuslost = false;
+			this.paused = 1;
+		}
+
+		if (this.countDown) {}
+		else if (this.paused) {
+			this.paused += frameTime;
+		} else {
+			if (!this.p2game.gameOver) this.p1game.frameAdvance(frameTime);
+			if (!this.p1game.gameOver) this.p2game.frameAdvance(frameTime); 
+		}
+	}
+
+	pause() {
+		this.paused = 1; 
+	}
+}
+
+function frameUpdate(timeStamp) {
+	frameTime = timeStamp - prevTimeStamp;
+	if (frameTime > 100) {
+		for (var i = 0; i < 256; i++) keys[i] = false;
+	} else {}
+	prevTimeStamp = timeStamp;
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	
+	game.frameAdvance(frameTime);
+	game.draw(0, 0); 
+	
+	document.getElementById("msg").innerHTML = '[';
+	for (var i = 0; i < 256; i += 1) if (keys[i]) document.getElementById("msg").innerHTML += 1 + ' ';
+	document.getElementById("msg").innerHTML += ']';
+
+	window.requestAnimationFrame(frameUpdate); 
+}
+ 
+function keyDownHandler(e) {
+	keys[e.keyCode] = true;
+}
+
+function keyUpHandler(e) {
+	keys[e.keyCode] = false;
+}
+
+function focusHandler() {
+	focuslost = false;
+}
+
+function blurHandler() {
+	focuslost = true;
+}
+
+function initSinglePlayerGame(startlevel=undefined) {
+	if (startlevel == undefined) {
+		startlevel = Number(document.getElementById('p1Startlevel').value);
+		if (isNaN(startlevel) || startlevel < 1 || startlevel > 20) {
+			document.getElementById('queryMsg').innerHTML = 'Enter a number from 1 to 20!';
+			return;
+		} else if (startlevel - Math.floor(startlevel)) {
+			document.getElementById('queryMsg').innerHTML = "There are no fractional numbered levels...";
+			return;
+		}
+	}
+	infinity = (document.getElementById('infinity').value == 'Infinity: Enabled');
+	document.getElementById('query0').innerHTML = '';
+	canvas.width = 20 * blockSize; canvas.height = 22.5 * blockSize;
+	game = new SinglePlayerGame(startlevel);
+	window.requestAnimationFrame(frameUpdate);
+	document.addEventListener("keydown", keyDownHandler, false);
+	document.addEventListener("keyup", keyUpHandler, false);
+	window.addEventListener("focus", focusHandler, false);
+	window.addEventListener("blur", blurHandler, false);
+}
+
+function configureSinglePlayerGame() {
+	levelChangeFlag = false;
+	document.getElementById("query1").innerHTML = `
+		Start from Level;
+		<input id="p1Startlevel" type="number" value="1" onclick="if (!levelChangeFlag && this.value == 1) this.value = ''; else if (this.value != '') this.value = Math.max(Math.min(this.value, 20), 1); levelChangeFlag = true;"></input>
+		<input type="button" onclick="initSinglePlayerGame()" value="Start!"></input><br><br><br>
+
+		<input id='infinity' type="button" onclick="document.getElementById('infinity').value = (document.getElementById('infinity').value == 'Infinity: Enabled') ? 'Infinity: Disabled' : 'Infinity: Enabled'" value="Infinity: Disabled"></input><br>
+
+		<p id="queryMsg"></p><br><br>
+		<p id="userHelp" align="left">
+		Shift Left/Right: A/D or ←→<br>
+		Soft Drop: S or ↓<br>
+		Hard Drop: W or Space<br>
+		Rotate: '<'/'>' or Z/↑<br>
+		Hold: ? or C<br>
+		Pause: escape<br>
+		</p>
+	`;
+}
+
+function initTwoPlayerGame(startlevel=undefined, inputKeys=[undefined, undefined], handicap=[1, 1]) {
+	var p1InputKeys, p2InputKeys, p1Handicap, p2Handicap;
+	[p1InputKeys, p2InputKeys] = inputKeys; [p1Handicap, p2Handicap] = handicap;
+
+	if (startlevel == undefined) {
+		startlevel = Number(document.getElementById('p1Startlevel').value);
+		if (isNaN(startlevel) || startlevel < 1 || startlevel > 20) {
+			document.getElementById('queryMsg').innerHTML = 'Enter a number from to 20!';
+			return;
+		} else if (startlevel - Math.floor(startlevel)) {
+			document.getElementById('queryMsg').innerHTML = "There are no fractional numbered levels... ";
+			return;
+		}
+	}
+	if (p1InputKeys == undefined) {
+		p1InputKeys = document.getElementById('p1InputKeys').value;
+		if (p1InputKeys == 'Player 1: Pseudo-standard') {
+			p1InputKeys = p1InputKeys_standard;
+		} else if (p1InputKeys == 'Player 1: Pseudo-gamepad') {
+			p1InputKeys = p1InputKeys_wooh;
+		} else {
+			alert('I am Dead');
+		}
+	}
+	if (p2InputKeys == undefined) {
+		p2InputKeys = document.getElementById('p2InputKeys').value;
+		if (p2InputKeys == 'Player 2: Pseudo-standard') {
+			p2InputKeys = p2InputKeys_standard;
+		} else if (p2InputKeys == 'Player 2: Pseudo-gamepad') {
+			p2InputKeys = p2InputKeys_wooh;
+		}
+	}
+	p1Handicap = Number(document.getElementById('p1Handicap').value);
+	p2Handicap = Number(document.getElementById('p2Handicap').value);
+	infinity = (document.getElementById('infinity').value == 'Infinity: Enabled');
+	document.getElementById('query0').innerHTML = '';
+	canvas.width = 40 * blockSize; canvas.height = 22.5 * blockSize;
+	game = new TwoPlayerGame(startlevel, [p1InputKeys, p2InputKeys], [p1Handicap, p2Handicap]);
+	window.requestAnimationFrame(frameUpdate);
+	document.addEventListener("keydown", keyDownHandler, false);
+	document.addEventListener("keyup", keyUpHandler, false);
+	window.addEventListener("focus", focusHandler, false);
+	window.addEventListener("blur", blurHandler, false);
+}
+ 
+function configureTwoPlayerGame() {
+	levelChangeFlag = false;
+	document.getElementById("query1").innerHTML = `
+		Start from Level;
+		<input id="p1Startlevel" type="number" value="1" onclick="if (!levelChangeFlag && this.value == 1) this.value = ''; else if (this.value != '') this.value = Math.max(Math.min(this.value, 20), 1); levelChangeFlag = true;"></input>
+		<input type="button" onclick="initTwoPlayerGame()" value="Start!"></input><br><br><br>
+
+		<input id='infinity' type="button" onclick="document.getElementById('infinity').value = (document.getElementById('infinity').value == 'Infinity: Enabled') ? 'Infinity: Disabled' : 'Infinity: Enabled'" value="Infinity: Disabled"></input><br><br>
+
+
+		<input id='p1InputKeys' type="button" onclick="document.getElementById('p1InputKeys').value = (document.getElementById('p1InputKeys').value == 'Player 1: Pseudo-gamepad') ? 'Player 1: Pseudo-standard' : 'Player 1: Pseudo-gamepad"' value="Player 1: Pseudo-gamepad"></input><br><br>
+
+		Player 1 Handicap (Multiplied to P1's attack):
+		<input id="p1Handicap" type="text" value="1"></input><br><br>
+
+		<input id='p2InputKeys' type="button" onclick="document.getElementById('p2InputKeys').value = (document.getElementById('p2InputKeys').value == 'Player 2: Pseudo-gamepad') ? 'Player 2: Pseudo-standard' : 'Player 2: Pseudo-gamepad'" value="Player 2: Pseudo-gamepad"></input><br><br>
+
+		Player 2 Handicap (Multiplied to P2's attack):
+		<input id="p2Handicap" type="text" value="1"></input><br>
+
+		<p id="queryMsg"></p><br>
+
+		<p id="userHelp">
+		<Player 1 Pseudo-gamepad><br>
+		Shift Left/Right: A/D<br>
+		Soft Drop: S<br>
+		Hard Drop: W<br>
+		Rotate: '<'/'>'<br>
+		Hold: ?<br>
+
+		<Player 1 Pseudo-standard><br>
+		Shift Left/Right: '<'/'?'<br>
+		Soft Drop: '>'<br>
+		Hard Drop: W<br>
+		Rotate: 'Z'/'L' (or ':')<br>
+		Hold: C<br>
+
+		<Player 2 Pseudo-gamepad><br>
+		Shift Left/Right: ←→<br>
+		Soft Drop: ↓<br>
+		Hard Drop: ↑<br>
+		Rotate: 'Num1'/'Num2'<br>
+		Hold: 'Num3'<br>
+
+		<Player 2 Pseudo-standard><br>
+		Shift Left/Right: 'Num1'/'Num3'<br>
+		Soft Drop: 'Num2'<br>
+		Hard Drop: ↑ / 'Num0'<br>
+		Rotate: ↑/'Num5'<br>
+		Hold: →<br>
+
+		Pause: escape<br>
+		</p>
+	`;
+}
+
+//initTwoPlayerGame(1);
+</script>
+</body>
+</html>
